@@ -10,13 +10,15 @@ from cost_helpers import (
     calculate_package_status_indicators,
     calculate_project_totals,
     calculate_package_metrics,
+    calculate_vo_indicators,
     format_idr,
     format_percent,
     prepare_package_register,
     prepare_package_summary,
     prepare_summary_dataframe,
+    prepare_variation_register,
 )
-from dummy_data import PROJECT_METADATA, get_initial_package_data
+from dummy_data import PROJECT_METADATA, get_initial_package_data, get_initial_vo_data
 from excel_helpers import create_excel_report
 
 
@@ -28,8 +30,18 @@ st.set_page_config(
 
 def init_state() -> None:
     """Initialize package data once per browser session."""
-    if "packages" not in st.session_state:
+    if (
+        "packages" not in st.session_state
+        or st.session_state.packages is None
+        or not isinstance(st.session_state.packages, pd.DataFrame)
+    ):
         st.session_state.packages = pd.DataFrame(get_initial_package_data())
+    if (
+        "variations" not in st.session_state
+        or st.session_state.variations is None
+        or not isinstance(st.session_state.variations, pd.DataFrame)
+    ):
+        st.session_state.variations = pd.DataFrame(get_initial_vo_data())
 
     metadata_defaults = {
         "contractor": "",
@@ -41,6 +53,20 @@ def init_state() -> None:
     for column, default_value in metadata_defaults.items():
         if column not in st.session_state.packages:
             st.session_state.packages[column] = default_value
+
+    variation_defaults = {
+        "vo_no": "",
+        "package": "",
+        "description": "",
+        "vo_status": "Draft",
+        "submitted_amount": 0,
+        "approved_amount": 0,
+        "pending_amount": 0,
+        "remarks": "",
+    }
+    for column, default_value in variation_defaults.items():
+        if column not in st.session_state.variations:
+            st.session_state.variations[column] = default_value
 
 
 def money_column(label: str) -> st.column_config.NumberColumn:
@@ -69,6 +95,15 @@ PROCUREMENT_STATUS_OPTIONS = [
     "Under Evaluation",
     "Awarded",
     "Contract Signed",
+]
+
+VO_STATUS_OPTIONS = [
+    "Draft",
+    "Submitted",
+    "Under Review",
+    "Approved",
+    "Rejected",
+    "Pending",
 ]
 
 
@@ -114,6 +149,18 @@ def render_package_status_indicators(indicators: dict[str, int]) -> None:
     columns[3].metric("In Procurement", indicators["in_procurement_count"])
 
 
+def render_vo_indicators(indicators: dict[str, float]) -> None:
+    columns = st.columns(5)
+    columns[0].metric("Submitted VO", format_idr(indicators["submitted_vo_total"]))
+    columns[1].metric("Approved VO", format_idr(indicators["approved_vo_total"]))
+    columns[2].metric("Pending VO", format_idr(indicators["pending_vo_total"]))
+    columns[3].metric("Approved VOs", int(indicators["approved_vo_count"]))
+    columns[4].metric(
+        "Pending / Review VOs",
+        int(indicators["pending_review_vo_count"]),
+    )
+
+
 def render_dashboard_charts(details: pd.DataFrame) -> None:
     chart_data = details.set_index("package")
 
@@ -140,36 +187,57 @@ def render_project_header() -> None:
     meta_columns[4].markdown("**Data Source:** Dummy in-memory data")
 
 
+
 def render_dashboard() -> None:
     render_project_header()
 
-    details = calculate_package_metrics(st.session_state.packages)
-    totals = calculate_project_totals(st.session_state.packages)
+    details = calculate_package_metrics(
+        st.session_state.packages,
+        st.session_state.variations,
+    )
+    totals = calculate_project_totals(
+        st.session_state.packages,
+        st.session_state.variations,
+    )
 
     st.divider()
     render_metric_grid(totals)
 
     st.subheader("Commercial Summary")
-    render_dashboard_indicators(calculate_dashboard_indicators(st.session_state.packages))
+    render_dashboard_indicators(
+        calculate_dashboard_indicators(
+            st.session_state.packages,
+            st.session_state.variations,
+        )
+    )
 
     st.subheader("Package Status Summary")
     render_package_status_indicators(
         calculate_package_status_indicators(st.session_state.packages)
     )
 
+    st.subheader("Variation Order Summary")
+    render_vo_indicators(calculate_vo_indicators(st.session_state.variations))
+
     st.subheader("Charts")
     render_dashboard_charts(details)
 
     st.subheader("Package Summary")
     st.dataframe(
-        prepare_package_summary(st.session_state.packages),
+        prepare_package_summary(
+            st.session_state.packages,
+            st.session_state.variations,
+        ),
         use_container_width=True,
         hide_index=True,
     )
 
     st.subheader("Package Register")
     st.dataframe(
-        prepare_package_register(st.session_state.packages),
+        prepare_package_register(
+            st.session_state.packages,
+            st.session_state.variations,
+        ),
         use_container_width=True,
         hide_index=True,
     )
@@ -211,13 +279,18 @@ def render_package_register() -> None:
         },
         key="editor_package_register",
     )
+    if edited is None:
+        edited = editor_frame
 
     for column in register_columns:
         st.session_state.packages[column] = edited[column].fillna("").astype(str)
 
     st.subheader("Updated Package Register")
     st.dataframe(
-        prepare_package_register(st.session_state.packages),
+        prepare_package_register(
+            st.session_state.packages,
+            st.session_state.variations,
+        ),
         use_container_width=True,
         hide_index=True,
     )
@@ -252,6 +325,8 @@ def render_edit_page(
         disabled=[] if allow_package_edit else ["package"],
         key=f"editor_{page_title.lower().replace(' ', '_')}",
     )
+    if edited is None:
+        edited = editor_frame
 
     if allow_package_edit:
         st.session_state.packages["package"] = edited["package"].fillna("").astype(str)
@@ -262,7 +337,84 @@ def render_edit_page(
 
     st.subheader("Updated Package Summary")
     st.dataframe(
-        prepare_package_summary(st.session_state.packages),
+        prepare_package_summary(
+            st.session_state.packages,
+            st.session_state.variations,
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def render_variation_orders() -> None:
+    st.title("Variation Orders")
+    st.caption("Edit detailed VO records. Package VO totals are aggregated from this register.")
+
+    editor_columns = [
+        "vo_no",
+        "package",
+        "description",
+        "vo_status",
+        "submitted_amount",
+        "approved_amount",
+        "pending_amount",
+        "remarks",
+    ]
+    editor_frame = st.session_state.variations[editor_columns].copy()
+
+    edited = st.data_editor(
+        editor_frame,
+        use_container_width=True,
+        hide_index=True,
+        num_rows="dynamic",
+        column_config={
+            "vo_no": st.column_config.TextColumn("VO No.", required=True),
+            "package": st.column_config.SelectboxColumn(
+                "Package",
+                options=st.session_state.packages["package"].tolist(),
+                required=True,
+            ),
+            "description": st.column_config.TextColumn("Description"),
+            "vo_status": st.column_config.SelectboxColumn(
+                "VO Status",
+                options=VO_STATUS_OPTIONS,
+                required=True,
+            ),
+            "submitted_amount": money_column("Submitted Amount"),
+            "approved_amount": money_column("Approved Amount"),
+            "pending_amount": money_column("Pending Amount"),
+            "remarks": st.column_config.TextColumn("Remarks"),
+        },
+        key="editor_variation_orders",
+    )
+    if edited is None:
+        edited = editor_frame
+
+    for column in ["vo_no", "package", "description", "vo_status", "remarks"]:
+        edited[column] = edited[column].fillna("").astype(str)
+    for column in ["submitted_amount", "approved_amount", "pending_amount"]:
+        edited[column] = pd.to_numeric(
+            edited[column],
+            errors="coerce",
+        ).fillna(0)
+    st.session_state.variations = edited[editor_columns]
+
+    st.subheader("VO Summary")
+    render_vo_indicators(calculate_vo_indicators(st.session_state.variations))
+
+    st.subheader("Variation Register")
+    st.dataframe(
+        prepare_variation_register(st.session_state.variations),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.subheader("Package Summary")
+    st.dataframe(
+        prepare_package_summary(
+            st.session_state.packages,
+            st.session_state.variations,
+        ),
         use_container_width=True,
         hide_index=True,
     )
@@ -272,23 +424,36 @@ def render_export_report() -> None:
     st.title("Export Report")
     st.caption("Download an Excel report generated from the current in-memory data.")
 
-    totals = calculate_project_totals(st.session_state.packages)
+    totals = calculate_project_totals(
+        st.session_state.packages,
+        st.session_state.variations,
+    )
 
     render_metric_grid(totals)
     st.subheader("Summary")
     st.dataframe(
-        prepare_summary_dataframe(st.session_state.packages),
+        prepare_summary_dataframe(
+            st.session_state.packages,
+            st.session_state.variations,
+        ),
         use_container_width=True,
         hide_index=True,
     )
     st.subheader("Export Preview")
     st.dataframe(
-        prepare_package_summary(st.session_state.packages),
+        prepare_package_summary(
+            st.session_state.packages,
+            st.session_state.variations,
+        ),
         use_container_width=True,
         hide_index=True,
     )
 
-    excel_bytes = create_excel_report(PROJECT_METADATA, st.session_state.packages)
+    excel_bytes = create_excel_report(
+        PROJECT_METADATA,
+        st.session_state.packages,
+        st.session_state.variations,
+    )
     st.download_button(
         "Download Excel Report",
         data=excel_bytes,
@@ -325,7 +490,7 @@ def main() -> None:
     elif selected_page == "Progress Claims":
         render_edit_page("Progress Claims", ["certified_payment"])
     elif selected_page == "Variation Orders":
-        render_edit_page("Variation Orders", ["approved_vo", "pending_vo"])
+        render_variation_orders()
     elif selected_page == "Export Report":
         render_export_report()
 

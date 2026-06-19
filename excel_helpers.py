@@ -10,15 +10,21 @@ from cost_helpers import (
     calculate_package_metrics,
     prepare_package_register,
     prepare_summary_dataframe,
+    normalize_vo_data,
 )
 
 
-def create_excel_report(project_metadata: dict, package_frame: pd.DataFrame) -> bytes:
+def create_excel_report(
+    project_metadata: dict,
+    package_frame: pd.DataFrame,
+    vo_frame: pd.DataFrame | None = None,
+) -> bytes:
     """Create an in-memory Excel report with summary and package detail sheets."""
     output = BytesIO()
-    package_details = calculate_package_metrics(package_frame)
-    package_register = prepare_package_register(package_frame)
-    summary_metrics = prepare_summary_dataframe(package_frame)
+    package_details = calculate_package_metrics(package_frame, vo_frame)
+    package_register = prepare_package_register(package_frame, vo_frame)
+    variation_register = normalize_vo_data(vo_frame)
+    summary_metrics = prepare_summary_dataframe(package_frame, vo_frame)
 
     summary_rows = [
         {"Item": "Project Name", "Value": project_metadata["name"]},
@@ -37,6 +43,7 @@ def create_excel_report(project_metadata: dict, package_frame: pd.DataFrame) -> 
         summary_frame.to_excel(writer, sheet_name="Summary", index=False)
         package_details.to_excel(writer, sheet_name="Package Details", index=False)
         package_register.to_excel(writer, sheet_name="Package Register", index=False)
+        variation_register.to_excel(writer, sheet_name="Variation Register", index=False)
 
         workbook = writer.book
         money_format = workbook.add_format({"num_format": '"Rp" #,##0'})
@@ -49,6 +56,7 @@ def create_excel_report(project_metadata: dict, package_frame: pd.DataFrame) -> 
             "Summary": summary_frame,
             "Package Details": package_details,
             "Package Register": package_register,
+            "Variation Register": variation_register,
         }.items():
             worksheet = writer.sheets[sheet_name]
             for column_index, column_name in enumerate(frame.columns):
@@ -70,6 +78,14 @@ def create_excel_report(project_metadata: dict, package_frame: pd.DataFrame) -> 
 
         percent_column = package_details.columns.get_loc("certified_percent")
         details_sheet.set_column(percent_column, percent_column, 18, percent_format)
+
+        variation_sheet = writer.sheets["Variation Register"]
+        variation_money_columns = [
+            variation_register.columns.get_loc(column)
+            for column in ["submitted_amount", "approved_amount", "pending_amount"]
+        ]
+        for column_index in variation_money_columns:
+            variation_sheet.set_column(column_index, column_index, 20, money_format)
 
     output.seek(0)
     return output.getvalue()

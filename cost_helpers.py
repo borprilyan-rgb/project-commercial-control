@@ -13,6 +13,20 @@ MONEY_COLUMNS = [
     "certified_payment",
 ]
 
+VO_AMOUNT_COLUMNS = [
+    "submitted_amount",
+    "approved_amount",
+    "pending_amount",
+]
+
+VO_TEXT_COLUMNS = [
+    "vo_no",
+    "package",
+    "description",
+    "vo_status",
+    "remarks",
+]
+
 TEXT_COLUMNS = [
     "package",
     "contractor",
@@ -45,6 +59,17 @@ REGISTER_COLUMNS = [
     "package_status",
     "procurement_status",
     "risk_level",
+    "remarks",
+]
+
+VARIATION_REGISTER_COLUMNS = [
+    "vo_no",
+    "package",
+    "description",
+    "vo_status",
+    "submitted_amount",
+    "approved_amount",
+    "pending_amount",
     "remarks",
 ]
 
@@ -91,6 +116,12 @@ DISPLAY_LABELS = {
     "package_status": "Package Status",
     "procurement_status": "Procurement Status",
     "remarks": "Remarks",
+    "vo_no": "VO No.",
+    "description": "Description",
+    "vo_status": "VO Status",
+    "submitted_amount": "Submitted Amount",
+    "approved_amount": "Approved Amount",
+    "pending_amount": "Pending Amount",
 }
 
 
@@ -100,9 +131,70 @@ def build_package_frame(package_data: list[dict]) -> pd.DataFrame:
     return calculate_package_metrics(frame)
 
 
-def calculate_package_metrics(frame: pd.DataFrame) -> pd.DataFrame:
-    """Return package data with QS cost-control metrics applied."""
+def calculate_vo_summary_by_package(vo_frame: pd.DataFrame | None) -> pd.DataFrame:
+    """Summarize approved and pending VO amounts by package."""
+    if vo_frame is None or vo_frame.empty:
+        return pd.DataFrame(columns=["package", "approved_vo", "pending_vo"])
+
+    variations = normalize_vo_data(vo_frame)
+    summary = (
+        variations.groupby("package", as_index=False)[
+            ["approved_amount", "pending_amount"]
+        ]
+        .sum()
+        .rename(
+            columns={
+                "approved_amount": "approved_vo",
+                "pending_amount": "pending_vo",
+            }
+        )
+    )
+    return summary
+
+
+def normalize_vo_data(vo_frame: pd.DataFrame | None) -> pd.DataFrame:
+    """Return VO records with required columns and numeric amount fields."""
+    if vo_frame is None:
+        variations = pd.DataFrame(columns=VARIATION_REGISTER_COLUMNS)
+    else:
+        variations = vo_frame.copy()
+
+    for column in VO_TEXT_COLUMNS:
+        if column not in variations:
+            variations[column] = ""
+        variations[column] = variations[column].fillna("").astype(str)
+
+    for column in VO_AMOUNT_COLUMNS:
+        if column not in variations:
+            variations[column] = 0
+        variations[column] = pd.to_numeric(
+            variations[column],
+            errors="coerce",
+        ).fillna(0)
+
+    return variations[VARIATION_REGISTER_COLUMNS]
+
+
+def apply_vo_summary(frame: pd.DataFrame, vo_frame: pd.DataFrame | None) -> pd.DataFrame:
+    """Apply VO register totals to package-level approved and pending VO fields."""
     result = frame.copy()
+    if vo_frame is None:
+        return result
+
+    vo_summary = calculate_vo_summary_by_package(vo_frame)
+    result = result.drop(columns=["approved_vo", "pending_vo"], errors="ignore")
+    result = result.merge(vo_summary, on="package", how="left")
+    result["approved_vo"] = result["approved_vo"].fillna(0)
+    result["pending_vo"] = result["pending_vo"].fillna(0)
+    return result
+
+
+def calculate_package_metrics(
+    frame: pd.DataFrame,
+    vo_frame: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Return package data with QS cost-control metrics applied."""
+    result = apply_vo_summary(frame, vo_frame)
 
     for column in TEXT_COLUMNS:
         if column not in result:
@@ -159,9 +251,12 @@ def package_risk_level(original_budget: float, budget_variance: float) -> str:
     return "Low Risk"
 
 
-def calculate_project_totals(frame: pd.DataFrame) -> dict[str, float]:
+def calculate_project_totals(
+    frame: pd.DataFrame,
+    vo_frame: pd.DataFrame | None = None,
+) -> dict[str, float]:
     """Calculate dashboard totals from package-level values."""
-    details = calculate_package_metrics(frame)
+    details = calculate_package_metrics(frame, vo_frame)
     contract_value = details["contract_award"].sum() + details["approved_vo"].sum()
     certified_percent = (
         details["certified_payment"].sum() / contract_value
@@ -181,9 +276,12 @@ def calculate_project_totals(frame: pd.DataFrame) -> dict[str, float]:
     }
 
 
-def calculate_dashboard_indicators(frame: pd.DataFrame) -> dict[str, float]:
+def calculate_dashboard_indicators(
+    frame: pd.DataFrame,
+    vo_frame: pd.DataFrame | None = None,
+) -> dict[str, float]:
     """Calculate dashboard-level package count and risk indicators."""
-    details = calculate_package_metrics(frame)
+    details = calculate_package_metrics(frame, vo_frame)
     return {
         "package_count": len(details),
         "under_budget_count": int((details["status"] == "Under Budget").sum()),
@@ -222,6 +320,21 @@ def calculate_package_status_indicators(frame: pd.DataFrame) -> dict[str, int]:
     }
 
 
+def calculate_vo_indicators(vo_frame: pd.DataFrame | None) -> dict[str, float]:
+    """Calculate dashboard-level VO register indicators."""
+    variations = normalize_vo_data(vo_frame)
+    review_statuses = {"Pending", "Under Review"}
+    return {
+        "submitted_vo_total": variations["submitted_amount"].sum(),
+        "approved_vo_total": variations["approved_amount"].sum(),
+        "pending_vo_total": variations["pending_amount"].sum(),
+        "approved_vo_count": int((variations["vo_status"] == "Approved").sum()),
+        "pending_review_vo_count": int(
+            variations["vo_status"].isin(review_statuses).sum()
+        ),
+    }
+
+
 def format_idr(value: float) -> str:
     """Format a number as compact Indonesian Rupiah."""
     sign = "-" if value < 0 else ""
@@ -239,9 +352,12 @@ def format_percent(value: float) -> str:
     return f"{value:.1%}"
 
 
-def prepare_summary_dataframe(frame: pd.DataFrame) -> pd.DataFrame:
+def prepare_summary_dataframe(
+    frame: pd.DataFrame,
+    vo_frame: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Prepare project-level metrics for display and export."""
-    totals = calculate_project_totals(frame)
+    totals = calculate_project_totals(frame, vo_frame)
     rows = []
     for key, label in SUMMARY_LABELS.items():
         value = totals[key]
@@ -256,9 +372,12 @@ def prepare_summary_dataframe(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def prepare_package_summary(frame: pd.DataFrame) -> pd.DataFrame:
+def prepare_package_summary(
+    frame: pd.DataFrame,
+    vo_frame: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Prepare package-level metrics for display."""
-    details = calculate_package_metrics(frame)[DASHBOARD_DISPLAY_COLUMNS]
+    details = calculate_package_metrics(frame, vo_frame)[DASHBOARD_DISPLAY_COLUMNS]
     display = details.copy()
 
     for column in [
@@ -276,9 +395,12 @@ def prepare_package_summary(frame: pd.DataFrame) -> pd.DataFrame:
     return display.rename(columns=DISPLAY_LABELS)
 
 
-def prepare_package_register(frame: pd.DataFrame) -> pd.DataFrame:
+def prepare_package_register(
+    frame: pd.DataFrame,
+    vo_frame: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Prepare package register metadata with calculated risk level."""
-    details = calculate_package_metrics(frame)
+    details = calculate_package_metrics(frame, vo_frame)
     register = frame.copy()
 
     for column in TEXT_COLUMNS:
@@ -288,6 +410,17 @@ def prepare_package_register(frame: pd.DataFrame) -> pd.DataFrame:
     register["risk_level"] = details["risk_level"].values
 
     return register[REGISTER_COLUMNS].rename(columns=DISPLAY_LABELS)
+
+
+def prepare_variation_register(vo_frame: pd.DataFrame | None) -> pd.DataFrame:
+    """Prepare detailed VO records for display and export."""
+    variations = normalize_vo_data(vo_frame).copy()
+    display = variations.copy()
+
+    for column in VO_AMOUNT_COLUMNS:
+        display[column] = display[column].apply(format_idr)
+
+    return display.rename(columns=DISPLAY_LABELS)
 
 
 def display_table(frame: pd.DataFrame) -> pd.DataFrame:
