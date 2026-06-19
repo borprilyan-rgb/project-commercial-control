@@ -26,6 +26,21 @@ DETAIL_COLUMNS = [
     "remaining_contract_value",
     "certified_percent",
     "status",
+    "risk_level",
+]
+
+DASHBOARD_DISPLAY_COLUMNS = [
+    "package",
+    "original_budget",
+    "contract_award",
+    "approved_vo",
+    "pending_vo",
+    "forecast_final_cost",
+    "budget_variance",
+    "certified_percent",
+    "remaining_contract_value",
+    "status",
+    "risk_level",
 ]
 
 SUMMARY_LABELS = {
@@ -38,6 +53,20 @@ SUMMARY_LABELS = {
     "certified_payment": "Certified to Date",
     "remaining_contract_value": "Remaining Contract Value",
     "certified_percent": "Certified %",
+}
+
+DISPLAY_LABELS = {
+    "package": "Package",
+    "original_budget": "Original Budget",
+    "contract_award": "Contract Award",
+    "approved_vo": "Approved VO",
+    "pending_vo": "Pending VO",
+    "forecast_final_cost": "Forecast Final Cost",
+    "budget_variance": "Budget Variance",
+    "certified_percent": "Certified %",
+    "remaining_contract_value": "Remaining Contract Value",
+    "status": "Status",
+    "risk_level": "Risk Level",
 }
 
 
@@ -74,6 +103,13 @@ def calculate_package_metrics(frame: pd.DataFrame) -> pd.DataFrame:
         contract_value > 0, 0
     ) / contract_value.where(contract_value > 0, 1)
     result["status"] = result["budget_variance"].apply(package_status)
+    result["risk_level"] = result.apply(
+        lambda row: package_risk_level(
+            row["original_budget"],
+            row["budget_variance"],
+        ),
+        axis=1,
+    )
 
     return result[DETAIL_COLUMNS]
 
@@ -85,6 +121,17 @@ def package_status(variance: float) -> str:
     if variance < 0:
         return "Over Budget"
     return "On Budget"
+
+
+def package_risk_level(original_budget: float, budget_variance: float) -> str:
+    """Classify package risk from budget headroom."""
+    if original_budget <= 0:
+        return "No Budget"
+    if budget_variance < 0:
+        return "High Risk"
+    if budget_variance <= original_budget * 0.05:
+        return "Medium Risk"
+    return "Low Risk"
 
 
 def calculate_project_totals(frame: pd.DataFrame) -> dict[str, float]:
@@ -106,6 +153,20 @@ def calculate_project_totals(frame: pd.DataFrame) -> dict[str, float]:
         "certified_payment": details["certified_payment"].sum(),
         "remaining_contract_value": details["remaining_contract_value"].sum(),
         "certified_percent": certified_percent,
+    }
+
+
+def calculate_dashboard_indicators(frame: pd.DataFrame) -> dict[str, float]:
+    """Calculate dashboard-level package count and risk indicators."""
+    details = calculate_package_metrics(frame)
+    return {
+        "package_count": len(details),
+        "under_budget_count": int((details["status"] == "Under Budget").sum()),
+        "over_budget_count": int((details["status"] == "Over Budget").sum()),
+        "high_risk_count": int((details["risk_level"] == "High Risk").sum()),
+        "average_certified_percent": details["certified_percent"].mean()
+        if len(details) > 0
+        else 0,
     }
 
 
@@ -145,7 +206,7 @@ def prepare_summary_dataframe(frame: pd.DataFrame) -> pd.DataFrame:
 
 def prepare_package_summary(frame: pd.DataFrame) -> pd.DataFrame:
     """Prepare package-level metrics for display."""
-    details = calculate_package_metrics(frame)
+    details = calculate_package_metrics(frame)[DASHBOARD_DISPLAY_COLUMNS]
     display = details.copy()
 
     for column in [
@@ -155,13 +216,12 @@ def prepare_package_summary(frame: pd.DataFrame) -> pd.DataFrame:
         "pending_vo",
         "forecast_final_cost",
         "budget_variance",
-        "certified_payment",
         "remaining_contract_value",
     ]:
         display[column] = display[column].apply(format_idr)
     display["certified_percent"] = display["certified_percent"].apply(format_percent)
 
-    return display_table(display)
+    return display.rename(columns=DISPLAY_LABELS)
 
 
 def display_table(frame: pd.DataFrame) -> pd.DataFrame:

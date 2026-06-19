@@ -1,4 +1,4 @@
-"""Phase 1 Streamlit app for a project commercial control dashboard."""
+"""Streamlit app for a project commercial control dashboard."""
 
 from __future__ import annotations
 
@@ -6,9 +6,11 @@ import pandas as pd
 import streamlit as st
 
 from cost_helpers import (
+    calculate_dashboard_indicators,
     calculate_project_totals,
     calculate_package_metrics,
     format_idr,
+    format_percent,
     prepare_package_summary,
     prepare_summary_dataframe,
 )
@@ -60,6 +62,32 @@ def render_metric_grid(totals: dict[str, float]) -> None:
             column.metric(label, format_idr(value))
 
 
+def render_dashboard_indicators(indicators: dict[str, float]) -> None:
+    columns = st.columns(5)
+    columns[0].metric("Packages", int(indicators["package_count"]))
+    columns[1].metric("Under Budget", int(indicators["under_budget_count"]))
+    columns[2].metric("Over Budget", int(indicators["over_budget_count"]))
+    columns[3].metric("High Risk", int(indicators["high_risk_count"]))
+    columns[4].metric(
+        "Avg Certified %",
+        format_percent(indicators["average_certified_percent"]),
+    )
+
+
+def render_dashboard_charts(details: pd.DataFrame) -> None:
+    chart_data = details.set_index("package")
+
+    chart_columns = st.columns(2)
+    with chart_columns[0]:
+        st.subheader("Budget Variance by Package")
+        st.bar_chart(chart_data[["budget_variance"]])
+
+    with chart_columns[1]:
+        st.subheader("Certified Percentage by Package")
+        certified_chart = chart_data[["certified_percent"]] * 100
+        st.bar_chart(certified_chart)
+
+
 def render_project_header() -> None:
     st.title("Project Commercial Control System")
     st.subheader(PROJECT_METADATA["name"])
@@ -81,18 +109,15 @@ def render_dashboard() -> None:
     st.divider()
     render_metric_grid(totals)
 
+    st.subheader("Commercial Summary")
+    render_dashboard_indicators(calculate_dashboard_indicators(st.session_state.packages))
+
+    st.subheader("Charts")
+    render_dashboard_charts(details)
+
     st.subheader("Package Summary")
     st.dataframe(
         prepare_package_summary(st.session_state.packages),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    st.subheader("Package Status")
-    st.dataframe(
-        details[["package", "status"]].rename(
-            columns={"package": "Package", "status": "Status"}
-        ),
         use_container_width=True,
         hide_index=True,
     )
@@ -147,7 +172,6 @@ def render_export_report() -> None:
     st.title("Export Report")
     st.caption("Download an Excel report generated from the current in-memory data.")
 
-    details = calculate_package_metrics(st.session_state.packages)
     totals = calculate_project_totals(st.session_state.packages)
 
     render_metric_grid(totals)
