@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from html import escape
+
 import pandas as pd
 import streamlit as st
 
@@ -33,6 +35,174 @@ st.set_page_config(
     page_title="Project Commercial Control System",
     layout="wide",
 )
+
+
+def inject_custom_css() -> None:
+    """Add controlled, app-owned styling for portfolio presentation."""
+    st.markdown(
+        """
+        <style>
+        .app-header {
+            border: 1px solid #d8dee8;
+            border-radius: 8px;
+            padding: 1.2rem 1.35rem;
+            margin: 0.25rem 0 1.15rem 0;
+            background: #ffffff;
+            color: #172033;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+        }
+        .app-header__eyebrow {
+            color: #536174;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin-bottom: 0.25rem;
+        }
+        .app-header__title {
+            font-size: 1.9rem;
+            line-height: 1.15;
+            font-weight: 750;
+            margin: 0;
+        }
+        .app-header__meta {
+            color: #536174;
+            font-size: 0.95rem;
+            margin-top: 0.4rem;
+        }
+        .section-heading {
+            margin: 1.35rem 0 0.7rem 0;
+            padding-bottom: 0.35rem;
+            border-bottom: 1px solid #e3e8ef;
+        }
+        .section-heading__title {
+            color: #172033;
+            font-size: 1.05rem;
+            font-weight: 750;
+            margin: 0;
+        }
+        .section-heading__caption {
+            color: #6b7280;
+            font-size: 0.86rem;
+            margin-top: 0.1rem;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin: 0.4rem 0 0.95rem 0;
+        }
+        .metric-grid--five {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+        .metric-card {
+            border: 1px solid #d8dee8;
+            border-radius: 8px;
+            padding: 0.85rem 0.95rem;
+            background: #ffffff;
+            color: #172033;
+            min-height: 5.1rem;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+        .metric-card__label {
+            color: #64748b;
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-bottom: 0.3rem;
+        }
+        .metric-card__value {
+            font-size: 1.18rem;
+            font-weight: 760;
+            line-height: 1.25;
+            overflow-wrap: anywhere;
+        }
+        .metric-card--danger {
+            border-left: 4px solid #c2410c;
+        }
+        .metric-card--good {
+            border-left: 4px solid #15803d;
+        }
+        .metric-card--neutral {
+            border-left: 4px solid #2563eb;
+        }
+        .badge {
+            display: inline-block;
+            border-radius: 999px;
+            padding: 0.16rem 0.55rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            white-space: nowrap;
+            border: 1px solid transparent;
+        }
+        .badge-good {
+            background: #dcfce7;
+            color: #166534;
+            border-color: #86efac;
+        }
+        .badge-warning {
+            background: #fef3c7;
+            color: #92400e;
+            border-color: #fcd34d;
+        }
+        .badge-danger {
+            background: #fee2e2;
+            color: #991b1b;
+            border-color: #fca5a5;
+        }
+        .badge-neutral {
+            background: #e0f2fe;
+            color: #075985;
+            border-color: #7dd3fc;
+        }
+        .report-table {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid #d8dee8;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #ffffff;
+            color: #172033;
+            font-size: 0.86rem;
+        }
+        .report-table th {
+            background: #f1f5f9;
+            color: #334155;
+            font-weight: 750;
+            text-align: left;
+            padding: 0.55rem 0.65rem;
+            border-bottom: 1px solid #d8dee8;
+        }
+        .report-table td {
+            padding: 0.52rem 0.65rem;
+            border-bottom: 1px solid #edf2f7;
+            vertical-align: top;
+        }
+        .report-table tr:last-child td {
+            border-bottom: 0;
+        }
+        @media (max-width: 1100px) {
+            .metric-grid,
+            .metric-grid--five {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        @media (max-width: 720px) {
+            .metric-grid,
+            .metric-grid--five {
+                grid-template-columns: 1fr;
+            }
+            .app-header__title {
+                font-size: 1.45rem;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+inject_custom_css()
 
 
 def init_state() -> None:
@@ -144,75 +314,157 @@ CLAIM_STATUS_OPTIONS = [
 ]
 
 
-def render_metric_grid(totals: dict[str, float]) -> None:
-    metric_rows = [
-        [
-            ("Original Budget", totals["original_budget"]),
-            ("Contract Award", totals["contract_award"]),
-            ("Approved VO", totals["approved_vo"]),
-            ("Pending VO", totals["pending_vo"]),
-        ],
-        [
-            ("Forecast Final Cost", totals["forecast_final_cost"]),
-            ("Budget Variance", totals["budget_variance"]),
-            ("Certified to Date", totals["certified_payment"]),
-            ("Remaining Contract Value", totals["remaining_contract_value"]),
-        ],
-    ]
+def badge_class(value: str) -> str:
+    """Map report statuses to stable badge classes."""
+    if value in {"Under Budget", "Low Risk", "Paid", "Certified", "Approved"}:
+        return "badge-good"
+    if value in {"On Budget", "Medium Risk", "Pending", "Under Review", "Submitted"}:
+        return "badge-warning"
+    if value in {"Over Budget", "High Risk", "Rejected"}:
+        return "badge-danger"
+    return "badge-neutral"
 
-    for row in metric_rows:
-        columns = st.columns(4)
-        for column, (label, value) in zip(columns, row):
-            column.metric(label, format_idr(value))
+
+def render_badge(value: object) -> str:
+    text = escape(str(value))
+    return f'<span class="badge {badge_class(str(value))}">{text}</span>'
+
+
+def render_section_heading(title: str, caption: str = "") -> None:
+    caption_html = (
+        f'<div class="section-heading__caption">{escape(caption)}</div>'
+        if caption
+        else ""
+    )
+    st.markdown(
+        (
+            '<div class="section-heading">'
+            f'<div class="section-heading__title">{escape(title)}</div>'
+            f"{caption_html}"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def render_card_grid(
+    cards: list[tuple[str, str | int | float]],
+    columns: int = 4,
+    accent_labels: set[str] | None = None,
+) -> None:
+    accent_labels = accent_labels or set()
+    grid_class = "metric-grid metric-grid--five" if columns == 5 else "metric-grid"
+    card_html = []
+
+    for label, value in cards:
+        accent_class = "metric-card--neutral"
+        if label in accent_labels:
+            value_text = str(value)
+            accent_class = (
+                "metric-card--danger"
+                if value_text.startswith("-")
+                else "metric-card--good"
+            )
+        card_html.append(
+            (
+                f'<div class="metric-card {accent_class}">'
+                f'<div class="metric-card__label">{escape(label)}</div>'
+                f'<div class="metric-card__value">{escape(str(value))}</div>'
+                "</div>"
+            )
+        )
+
+    st.markdown(
+        f'<div class="{grid_class}">{"".join(card_html)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_report_table(frame: pd.DataFrame, badge_columns: set[str] | None = None) -> None:
+    badge_columns = badge_columns or set()
+    header_html = "".join(f"<th>{escape(str(column))}</th>" for column in frame.columns)
+    row_html = []
+
+    for _, row in frame.iterrows():
+        cells = []
+        for column in frame.columns:
+            value = row[column]
+            cell_html = render_badge(value) if column in badge_columns else escape(str(value))
+            cells.append(f"<td>{cell_html}</td>")
+        row_html.append(f"<tr>{''.join(cells)}</tr>")
+
+    st.markdown(
+        (
+            '<table class="report-table">'
+            f"<thead><tr>{header_html}</tr></thead>"
+            f"<tbody>{''.join(row_html)}</tbody>"
+            "</table>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def render_metric_grid(totals: dict[str, float]) -> None:
+    cards = [
+        ("Original Budget", format_idr(totals["original_budget"])),
+        ("Contract Award", format_idr(totals["contract_award"])),
+        ("Approved VO", format_idr(totals["approved_vo"])),
+        ("Pending VO", format_idr(totals["pending_vo"])),
+        ("Forecast Final Cost", format_idr(totals["forecast_final_cost"])),
+        ("Budget Variance", format_idr(totals["budget_variance"])),
+        ("Certified to Date", format_idr(totals["certified_payment"])),
+        ("Remaining Contract Value", format_idr(totals["remaining_contract_value"])),
+    ]
+    render_card_grid(cards, accent_labels={"Budget Variance"})
 
 
 def render_dashboard_indicators(indicators: dict[str, float]) -> None:
-    columns = st.columns(5)
-    columns[0].metric("Packages", int(indicators["package_count"]))
-    columns[1].metric("Under Budget", int(indicators["under_budget_count"]))
-    columns[2].metric("Over Budget", int(indicators["over_budget_count"]))
-    columns[3].metric("High Risk", int(indicators["high_risk_count"]))
-    columns[4].metric(
-        "Avg Certified %",
-        format_percent(indicators["average_certified_percent"]),
+    render_card_grid(
+        [
+            ("Packages", int(indicators["package_count"])),
+            ("Under Budget", int(indicators["under_budget_count"])),
+            ("Over Budget", int(indicators["over_budget_count"])),
+            ("High Risk", int(indicators["high_risk_count"])),
+            ("Avg Certified %", format_percent(indicators["average_certified_percent"])),
+        ],
+        columns=5,
     )
 
 
 def render_package_status_indicators(indicators: dict[str, int]) -> None:
-    columns = st.columns(4)
-    columns[0].metric("Awarded", indicators["awarded_count"])
-    columns[1].metric("Ongoing", indicators["ongoing_count"])
-    columns[2].metric("Completed / Closed", indicators["completed_closed_count"])
-    columns[3].metric("In Procurement", indicators["in_procurement_count"])
+    render_card_grid(
+        [
+            ("Awarded", indicators["awarded_count"]),
+            ("Ongoing", indicators["ongoing_count"]),
+            ("Completed / Closed", indicators["completed_closed_count"]),
+            ("In Procurement", indicators["in_procurement_count"]),
+        ]
+    )
 
 
 def render_vo_indicators(indicators: dict[str, float]) -> None:
-    columns = st.columns(5)
-    columns[0].metric("Submitted VO", format_idr(indicators["submitted_vo_total"]))
-    columns[1].metric("Approved VO", format_idr(indicators["approved_vo_total"]))
-    columns[2].metric("Pending VO", format_idr(indicators["pending_vo_total"]))
-    columns[3].metric("Approved VOs", int(indicators["approved_vo_count"]))
-    columns[4].metric(
-        "Pending / Review VOs",
-        int(indicators["pending_review_vo_count"]),
+    render_card_grid(
+        [
+            ("Submitted VO", format_idr(indicators["submitted_vo_total"])),
+            ("Approved VO", format_idr(indicators["approved_vo_total"])),
+            ("Pending VO", format_idr(indicators["pending_vo_total"])),
+            ("Approved VOs", int(indicators["approved_vo_count"])),
+            ("Pending / Review VOs", int(indicators["pending_review_vo_count"])),
+        ],
+        columns=5,
     )
 
 
 def render_claim_indicators(indicators: dict[str, float]) -> None:
-    columns = st.columns(5)
-    columns[0].metric(
-        "Submitted Claims",
-        format_idr(indicators["submitted_claim_total"]),
-    )
-    columns[1].metric(
-        "Certified Claims",
-        format_idr(indicators["certified_claim_total"]),
-    )
-    columns[2].metric("Total Paid", format_idr(indicators["paid_total"]))
-    columns[3].metric("Certified Claims", int(indicators["certified_claim_count"]))
-    columns[4].metric(
-        "Under Review Claims",
-        int(indicators["under_review_claim_count"]),
+    render_card_grid(
+        [
+            ("Submitted Claims", format_idr(indicators["submitted_claim_total"])),
+            ("Certified Claims", format_idr(indicators["certified_claim_total"])),
+            ("Total Paid", format_idr(indicators["paid_total"])),
+            ("Certified Claim Count", int(indicators["certified_claim_count"])),
+            ("Under Review Claims", int(indicators["under_review_claim_count"])),
+        ],
+        columns=5,
     )
 
 
@@ -231,16 +483,19 @@ def render_dashboard_charts(details: pd.DataFrame) -> None:
 
 
 def render_project_header() -> None:
-    st.title("Project Commercial Control System")
-    st.subheader(PROJECT_METADATA["name"])
-
-    meta_columns = st.columns(5)
-    meta_columns[0].markdown(f"**Project Type:** {PROJECT_METADATA['type']}")
-    meta_columns[1].markdown(f"**Location:** {PROJECT_METADATA['location']}")
-    meta_columns[2].markdown(f"**Client Type:** {PROJECT_METADATA['client_type']}")
-    meta_columns[3].markdown(f"**Currency:** {PROJECT_METADATA['currency']}")
-    meta_columns[4].markdown("**Data Source:** Dummy in-memory data")
-
+    st.markdown(
+        (
+            '<div class="app-header">'
+            '<div class="app-header__eyebrow">Project Commercial Control System</div>'
+            f'<h1 class="app-header__title">{escape(PROJECT_METADATA["name"])}</h1>'
+            '<div class="app-header__meta">'
+            f'{escape(PROJECT_METADATA["type"])} | '
+            f'{escape(PROJECT_METADATA["location"])} | '
+            f'{escape(PROJECT_METADATA["client_type"])}'
+            "</div></div>"
+        ),
+        unsafe_allow_html=True,
+    )
 
 
 def render_dashboard() -> None:
@@ -257,10 +512,16 @@ def render_dashboard() -> None:
         st.session_state.claims,
     )
 
-    st.divider()
+    render_section_heading(
+        "Commercial Overview",
+        "Headline budget, award, variation, forecast, and payment position.",
+    )
     render_metric_grid(totals)
 
-    st.subheader("Commercial Summary")
+    render_section_heading(
+        "Package Risk Summary",
+        "Budget status, risk exposure, and certified progress across packages.",
+    )
     render_dashboard_indicators(
         calculate_dashboard_indicators(
             st.session_state.packages,
@@ -269,40 +530,56 @@ def render_dashboard() -> None:
         )
     )
 
-    st.subheader("Package Status Summary")
+    render_section_heading(
+        "Package Status Summary",
+        "Current procurement and execution status across the package register.",
+    )
     render_package_status_indicators(
         calculate_package_status_indicators(st.session_state.packages)
     )
 
-    st.subheader("Variation Order Summary")
+    render_section_heading(
+        "Variation Order Summary",
+        "Submitted, approved, and pending variation exposure from the VO register.",
+    )
     render_vo_indicators(calculate_vo_indicators(st.session_state.variations))
 
-    st.subheader("Progress Claim Summary")
+    render_section_heading(
+        "Progress Claim Summary",
+        "Submitted, certified, paid, and review-stage progress claim position.",
+    )
     render_claim_indicators(calculate_claim_indicators(st.session_state.claims))
 
-    st.subheader("Charts")
+    render_section_heading(
+        "Commercial Trend Views",
+        "Quick visual scan of variance and certification percentage by package.",
+    )
     render_dashboard_charts(details)
 
-    st.subheader("Package Summary")
-    st.dataframe(
+    render_section_heading(
+        "Package Commercial Summary",
+        "Calculated package-level budget, forecast, payment, status, and risk.",
+    )
+    render_report_table(
         prepare_package_summary(
             st.session_state.packages,
             st.session_state.variations,
             st.session_state.claims,
         ),
-        use_container_width=True,
-        hide_index=True,
+        badge_columns={"Status", "Risk Level"},
     )
 
-    st.subheader("Package Register")
-    st.dataframe(
+    render_section_heading(
+        "Package Register",
+        "Contractor, contract reference, procurement status, package status, and risk.",
+    )
+    render_report_table(
         prepare_package_register(
             st.session_state.packages,
             st.session_state.variations,
             st.session_state.claims,
         ),
-        use_container_width=True,
-        hide_index=True,
+        badge_columns={"Package Status", "Procurement Status", "Risk Level"},
     )
 
 
