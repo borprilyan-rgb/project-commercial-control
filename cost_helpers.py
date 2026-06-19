@@ -27,6 +27,21 @@ VO_TEXT_COLUMNS = [
     "remarks",
 ]
 
+CLAIM_AMOUNT_COLUMNS = [
+    "submitted_amount",
+    "certified_amount",
+    "payment_amount",
+]
+
+CLAIM_TEXT_COLUMNS = [
+    "claim_no",
+    "period",
+    "package",
+    "contractor",
+    "claim_status",
+    "remarks",
+]
+
 TEXT_COLUMNS = [
     "package",
     "contractor",
@@ -70,6 +85,18 @@ VARIATION_REGISTER_COLUMNS = [
     "submitted_amount",
     "approved_amount",
     "pending_amount",
+    "remarks",
+]
+
+CLAIM_REGISTER_COLUMNS = [
+    "claim_no",
+    "period",
+    "package",
+    "contractor",
+    "claim_status",
+    "submitted_amount",
+    "certified_amount",
+    "payment_amount",
     "remarks",
 ]
 
@@ -122,6 +149,11 @@ DISPLAY_LABELS = {
     "submitted_amount": "Submitted Amount",
     "approved_amount": "Approved Amount",
     "pending_amount": "Pending Amount",
+    "claim_no": "Claim No.",
+    "period": "Period",
+    "claim_status": "Claim Status",
+    "certified_amount": "Certified Amount",
+    "payment_amount": "Payment Amount",
 }
 
 
@@ -189,12 +221,77 @@ def apply_vo_summary(frame: pd.DataFrame, vo_frame: pd.DataFrame | None) -> pd.D
     return result
 
 
+def normalize_claim_data(claim_frame: pd.DataFrame | None) -> pd.DataFrame:
+    """Return claim records with required columns and numeric amount fields."""
+    if claim_frame is None:
+        claims = pd.DataFrame(columns=CLAIM_REGISTER_COLUMNS)
+    else:
+        claims = claim_frame.copy()
+
+    for column in CLAIM_TEXT_COLUMNS:
+        if column not in claims:
+            claims[column] = ""
+        claims[column] = claims[column].fillna("").astype(str)
+
+    for column in CLAIM_AMOUNT_COLUMNS:
+        if column not in claims:
+            claims[column] = 0
+        claims[column] = pd.to_numeric(
+            claims[column],
+            errors="coerce",
+        ).fillna(0)
+
+    return claims[CLAIM_REGISTER_COLUMNS]
+
+
+def calculate_claim_summary_by_package(
+    claim_frame: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """Summarize certified and paid amounts by package."""
+    if claim_frame is None or claim_frame.empty:
+        return pd.DataFrame(columns=["package", "certified_payment", "payment_amount"])
+
+    claims = normalize_claim_data(claim_frame)
+    summary = (
+        claims.groupby("package", as_index=False)[
+            ["certified_amount", "payment_amount"]
+        ]
+        .sum()
+        .rename(
+            columns={
+                "certified_amount": "certified_payment",
+                "payment_amount": "payment_amount",
+            }
+        )
+    )
+    return summary
+
+
+def apply_claim_summary(
+    frame: pd.DataFrame,
+    claim_frame: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """Apply claim register totals to package-level certified payment fields."""
+    result = frame.copy()
+    if claim_frame is None:
+        return result
+
+    claim_summary = calculate_claim_summary_by_package(claim_frame)
+    result = result.drop(columns=["certified_payment", "payment_amount"], errors="ignore")
+    result = result.merge(claim_summary, on="package", how="left")
+    result["certified_payment"] = result["certified_payment"].fillna(0)
+    result["payment_amount"] = result["payment_amount"].fillna(0)
+    return result
+
+
 def calculate_package_metrics(
     frame: pd.DataFrame,
     vo_frame: pd.DataFrame | None = None,
+    claim_frame: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Return package data with QS cost-control metrics applied."""
     result = apply_vo_summary(frame, vo_frame)
+    result = apply_claim_summary(result, claim_frame)
 
     for column in TEXT_COLUMNS:
         if column not in result:
@@ -254,9 +351,10 @@ def package_risk_level(original_budget: float, budget_variance: float) -> str:
 def calculate_project_totals(
     frame: pd.DataFrame,
     vo_frame: pd.DataFrame | None = None,
+    claim_frame: pd.DataFrame | None = None,
 ) -> dict[str, float]:
     """Calculate dashboard totals from package-level values."""
-    details = calculate_package_metrics(frame, vo_frame)
+    details = calculate_package_metrics(frame, vo_frame, claim_frame)
     contract_value = details["contract_award"].sum() + details["approved_vo"].sum()
     certified_percent = (
         details["certified_payment"].sum() / contract_value
@@ -279,9 +377,10 @@ def calculate_project_totals(
 def calculate_dashboard_indicators(
     frame: pd.DataFrame,
     vo_frame: pd.DataFrame | None = None,
+    claim_frame: pd.DataFrame | None = None,
 ) -> dict[str, float]:
     """Calculate dashboard-level package count and risk indicators."""
-    details = calculate_package_metrics(frame, vo_frame)
+    details = calculate_package_metrics(frame, vo_frame, claim_frame)
     return {
         "package_count": len(details),
         "under_budget_count": int((details["status"] == "Under Budget").sum()),
@@ -335,6 +434,20 @@ def calculate_vo_indicators(vo_frame: pd.DataFrame | None) -> dict[str, float]:
     }
 
 
+def calculate_claim_indicators(claim_frame: pd.DataFrame | None) -> dict[str, float]:
+    """Calculate dashboard-level progress claim indicators."""
+    claims = normalize_claim_data(claim_frame)
+    return {
+        "submitted_claim_total": claims["submitted_amount"].sum(),
+        "certified_claim_total": claims["certified_amount"].sum(),
+        "paid_total": claims["payment_amount"].sum(),
+        "certified_claim_count": int((claims["claim_status"] == "Certified").sum()),
+        "under_review_claim_count": int(
+            (claims["claim_status"] == "Under Review").sum()
+        ),
+    }
+
+
 def format_idr(value: float) -> str:
     """Format a number as compact Indonesian Rupiah."""
     sign = "-" if value < 0 else ""
@@ -355,9 +468,10 @@ def format_percent(value: float) -> str:
 def prepare_summary_dataframe(
     frame: pd.DataFrame,
     vo_frame: pd.DataFrame | None = None,
+    claim_frame: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Prepare project-level metrics for display and export."""
-    totals = calculate_project_totals(frame, vo_frame)
+    totals = calculate_project_totals(frame, vo_frame, claim_frame)
     rows = []
     for key, label in SUMMARY_LABELS.items():
         value = totals[key]
@@ -375,9 +489,12 @@ def prepare_summary_dataframe(
 def prepare_package_summary(
     frame: pd.DataFrame,
     vo_frame: pd.DataFrame | None = None,
+    claim_frame: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Prepare package-level metrics for display."""
-    details = calculate_package_metrics(frame, vo_frame)[DASHBOARD_DISPLAY_COLUMNS]
+    details = calculate_package_metrics(frame, vo_frame, claim_frame)[
+        DASHBOARD_DISPLAY_COLUMNS
+    ]
     display = details.copy()
 
     for column in [
@@ -398,9 +515,10 @@ def prepare_package_summary(
 def prepare_package_register(
     frame: pd.DataFrame,
     vo_frame: pd.DataFrame | None = None,
+    claim_frame: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Prepare package register metadata with calculated risk level."""
-    details = calculate_package_metrics(frame, vo_frame)
+    details = calculate_package_metrics(frame, vo_frame, claim_frame)
     register = frame.copy()
 
     for column in TEXT_COLUMNS:
@@ -418,6 +536,17 @@ def prepare_variation_register(vo_frame: pd.DataFrame | None) -> pd.DataFrame:
     display = variations.copy()
 
     for column in VO_AMOUNT_COLUMNS:
+        display[column] = display[column].apply(format_idr)
+
+    return display.rename(columns=DISPLAY_LABELS)
+
+
+def prepare_claim_register(claim_frame: pd.DataFrame | None) -> pd.DataFrame:
+    """Prepare detailed progress claim records for display and export."""
+    claims = normalize_claim_data(claim_frame).copy()
+    display = claims.copy()
+
+    for column in CLAIM_AMOUNT_COLUMNS:
         display[column] = display[column].apply(format_idr)
 
     return display.rename(columns=DISPLAY_LABELS)

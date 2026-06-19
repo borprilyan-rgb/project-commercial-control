@@ -7,6 +7,7 @@ import streamlit as st
 
 from cost_helpers import (
     calculate_dashboard_indicators,
+    calculate_claim_indicators,
     calculate_package_status_indicators,
     calculate_project_totals,
     calculate_package_metrics,
@@ -15,10 +16,16 @@ from cost_helpers import (
     format_percent,
     prepare_package_register,
     prepare_package_summary,
+    prepare_claim_register,
     prepare_summary_dataframe,
     prepare_variation_register,
 )
-from dummy_data import PROJECT_METADATA, get_initial_package_data, get_initial_vo_data
+from dummy_data import (
+    PROJECT_METADATA,
+    get_initial_claim_data,
+    get_initial_package_data,
+    get_initial_vo_data,
+)
 from excel_helpers import create_excel_report
 
 
@@ -42,6 +49,12 @@ def init_state() -> None:
         or not isinstance(st.session_state.variations, pd.DataFrame)
     ):
         st.session_state.variations = pd.DataFrame(get_initial_vo_data())
+    if (
+        "claims" not in st.session_state
+        or st.session_state.claims is None
+        or not isinstance(st.session_state.claims, pd.DataFrame)
+    ):
+        st.session_state.claims = pd.DataFrame(get_initial_claim_data())
 
     metadata_defaults = {
         "contractor": "",
@@ -67,6 +80,21 @@ def init_state() -> None:
     for column, default_value in variation_defaults.items():
         if column not in st.session_state.variations:
             st.session_state.variations[column] = default_value
+
+    claim_defaults = {
+        "claim_no": "",
+        "period": "",
+        "package": "",
+        "contractor": "",
+        "claim_status": "Draft",
+        "submitted_amount": 0,
+        "certified_amount": 0,
+        "payment_amount": 0,
+        "remarks": "",
+    }
+    for column, default_value in claim_defaults.items():
+        if column not in st.session_state.claims:
+            st.session_state.claims[column] = default_value
 
 
 def money_column(label: str) -> st.column_config.NumberColumn:
@@ -104,6 +132,15 @@ VO_STATUS_OPTIONS = [
     "Approved",
     "Rejected",
     "Pending",
+]
+
+CLAIM_STATUS_OPTIONS = [
+    "Draft",
+    "Submitted",
+    "Under Review",
+    "Certified",
+    "Paid",
+    "Rejected",
 ]
 
 
@@ -161,6 +198,24 @@ def render_vo_indicators(indicators: dict[str, float]) -> None:
     )
 
 
+def render_claim_indicators(indicators: dict[str, float]) -> None:
+    columns = st.columns(5)
+    columns[0].metric(
+        "Submitted Claims",
+        format_idr(indicators["submitted_claim_total"]),
+    )
+    columns[1].metric(
+        "Certified Claims",
+        format_idr(indicators["certified_claim_total"]),
+    )
+    columns[2].metric("Total Paid", format_idr(indicators["paid_total"]))
+    columns[3].metric("Certified Claims", int(indicators["certified_claim_count"]))
+    columns[4].metric(
+        "Under Review Claims",
+        int(indicators["under_review_claim_count"]),
+    )
+
+
 def render_dashboard_charts(details: pd.DataFrame) -> None:
     chart_data = details.set_index("package")
 
@@ -194,10 +249,12 @@ def render_dashboard() -> None:
     details = calculate_package_metrics(
         st.session_state.packages,
         st.session_state.variations,
+        st.session_state.claims,
     )
     totals = calculate_project_totals(
         st.session_state.packages,
         st.session_state.variations,
+        st.session_state.claims,
     )
 
     st.divider()
@@ -208,6 +265,7 @@ def render_dashboard() -> None:
         calculate_dashboard_indicators(
             st.session_state.packages,
             st.session_state.variations,
+            st.session_state.claims,
         )
     )
 
@@ -219,6 +277,9 @@ def render_dashboard() -> None:
     st.subheader("Variation Order Summary")
     render_vo_indicators(calculate_vo_indicators(st.session_state.variations))
 
+    st.subheader("Progress Claim Summary")
+    render_claim_indicators(calculate_claim_indicators(st.session_state.claims))
+
     st.subheader("Charts")
     render_dashboard_charts(details)
 
@@ -227,6 +288,7 @@ def render_dashboard() -> None:
         prepare_package_summary(
             st.session_state.packages,
             st.session_state.variations,
+            st.session_state.claims,
         ),
         use_container_width=True,
         hide_index=True,
@@ -237,6 +299,7 @@ def render_dashboard() -> None:
         prepare_package_register(
             st.session_state.packages,
             st.session_state.variations,
+            st.session_state.claims,
         ),
         use_container_width=True,
         hide_index=True,
@@ -290,6 +353,7 @@ def render_package_register() -> None:
         prepare_package_register(
             st.session_state.packages,
             st.session_state.variations,
+            st.session_state.claims,
         ),
         use_container_width=True,
         hide_index=True,
@@ -340,6 +404,7 @@ def render_edit_page(
         prepare_package_summary(
             st.session_state.packages,
             st.session_state.variations,
+            st.session_state.claims,
         ),
         use_container_width=True,
         hide_index=True,
@@ -414,6 +479,94 @@ def render_variation_orders() -> None:
         prepare_package_summary(
             st.session_state.packages,
             st.session_state.variations,
+            st.session_state.claims,
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def render_progress_claims() -> None:
+    st.title("Progress Claims")
+    st.caption(
+        "Edit detailed monthly claim records. Certified totals are aggregated from this register."
+    )
+
+    editor_columns = [
+        "claim_no",
+        "period",
+        "package",
+        "contractor",
+        "claim_status",
+        "submitted_amount",
+        "certified_amount",
+        "payment_amount",
+        "remarks",
+    ]
+    editor_frame = st.session_state.claims[editor_columns].copy()
+
+    edited = st.data_editor(
+        editor_frame,
+        use_container_width=True,
+        hide_index=True,
+        num_rows="dynamic",
+        column_config={
+            "claim_no": st.column_config.TextColumn("Claim No.", required=True),
+            "period": st.column_config.TextColumn("Period"),
+            "package": st.column_config.SelectboxColumn(
+                "Package",
+                options=st.session_state.packages["package"].tolist(),
+                required=True,
+            ),
+            "contractor": st.column_config.TextColumn("Contractor"),
+            "claim_status": st.column_config.SelectboxColumn(
+                "Claim Status",
+                options=CLAIM_STATUS_OPTIONS,
+                required=True,
+            ),
+            "submitted_amount": money_column("Submitted Amount"),
+            "certified_amount": money_column("Certified Amount"),
+            "payment_amount": money_column("Payment Amount"),
+            "remarks": st.column_config.TextColumn("Remarks"),
+        },
+        key="editor_progress_claims",
+    )
+    if edited is None:
+        edited = editor_frame
+
+    text_columns = [
+        "claim_no",
+        "period",
+        "package",
+        "contractor",
+        "claim_status",
+        "remarks",
+    ]
+    for column in text_columns:
+        edited[column] = edited[column].fillna("").astype(str)
+    for column in ["submitted_amount", "certified_amount", "payment_amount"]:
+        edited[column] = pd.to_numeric(
+            edited[column],
+            errors="coerce",
+        ).fillna(0)
+    st.session_state.claims = edited[editor_columns]
+
+    st.subheader("Claim Summary")
+    render_claim_indicators(calculate_claim_indicators(st.session_state.claims))
+
+    st.subheader("Progress Claim Register")
+    st.dataframe(
+        prepare_claim_register(st.session_state.claims),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.subheader("Package Summary")
+    st.dataframe(
+        prepare_package_summary(
+            st.session_state.packages,
+            st.session_state.variations,
+            st.session_state.claims,
         ),
         use_container_width=True,
         hide_index=True,
@@ -427,6 +580,7 @@ def render_export_report() -> None:
     totals = calculate_project_totals(
         st.session_state.packages,
         st.session_state.variations,
+        st.session_state.claims,
     )
 
     render_metric_grid(totals)
@@ -435,6 +589,7 @@ def render_export_report() -> None:
         prepare_summary_dataframe(
             st.session_state.packages,
             st.session_state.variations,
+            st.session_state.claims,
         ),
         use_container_width=True,
         hide_index=True,
@@ -444,6 +599,7 @@ def render_export_report() -> None:
         prepare_package_summary(
             st.session_state.packages,
             st.session_state.variations,
+            st.session_state.claims,
         ),
         use_container_width=True,
         hide_index=True,
@@ -453,6 +609,7 @@ def render_export_report() -> None:
         PROJECT_METADATA,
         st.session_state.packages,
         st.session_state.variations,
+        st.session_state.claims,
     )
     st.download_button(
         "Download Excel Report",
@@ -488,7 +645,7 @@ def main() -> None:
     elif selected_page == "Contract Awards":
         render_edit_page("Contract Awards", ["contract_award"])
     elif selected_page == "Progress Claims":
-        render_edit_page("Progress Claims", ["certified_payment"])
+        render_progress_claims()
     elif selected_page == "Variation Orders":
         render_variation_orders()
     elif selected_page == "Export Report":

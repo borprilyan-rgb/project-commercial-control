@@ -252,6 +252,164 @@ VO_DATA = [
 ]
 
 
+CLAIM_DATA = [
+    {
+        "claim_no": "PC-001",
+        "period": "2026-01",
+        "package": "Earthwork",
+        "contractor": "PT Cipta Galian Nusantara",
+        "claim_status": "Paid",
+        "submitted_amount": 3_800_000_000,
+        "certified_amount": 3_600_000_000,
+        "payment_amount": 3_600_000_000,
+        "remarks": "Certified for excavation and disposal progress.",
+    },
+    {
+        "claim_no": "PC-002",
+        "period": "2026-02",
+        "package": "Earthwork",
+        "contractor": "PT Cipta Galian Nusantara",
+        "claim_status": "Certified",
+        "submitted_amount": 3_700_000_000,
+        "certified_amount": 3_500_000_000,
+        "payment_amount": 0,
+        "remarks": "Payment recommendation issued.",
+    },
+    {
+        "claim_no": "PC-003",
+        "period": "2026-01",
+        "package": "Foundation",
+        "contractor": "PT Pondasi Prima Konstruksi",
+        "claim_status": "Paid",
+        "submitted_amount": 12_500_000_000,
+        "certified_amount": 12_000_000_000,
+        "payment_amount": 12_000_000_000,
+        "remarks": "Certified for piling works.",
+    },
+    {
+        "claim_no": "PC-004",
+        "period": "2026-02",
+        "package": "Foundation",
+        "contractor": "PT Pondasi Prima Konstruksi",
+        "claim_status": "Certified",
+        "submitted_amount": 11_200_000_000,
+        "certified_amount": 10_800_000_000,
+        "payment_amount": 0,
+        "remarks": "Pile cap progress certified.",
+    },
+    {
+        "claim_no": "PC-005",
+        "period": "2026-03",
+        "package": "Structure",
+        "contractor": "PT Beton Karya Utama",
+        "claim_status": "Paid",
+        "submitted_amount": 25_600_000_000,
+        "certified_amount": 24_500_000_000,
+        "payment_amount": 24_500_000_000,
+        "remarks": "Lower podium works certified and paid.",
+    },
+    {
+        "claim_no": "PC-006",
+        "period": "2026-04",
+        "package": "Structure",
+        "contractor": "PT Beton Karya Utama",
+        "claim_status": "Under Review",
+        "submitted_amount": 26_200_000_000,
+        "certified_amount": 25_000_000_000,
+        "payment_amount": 0,
+        "remarks": "Upper podium quantities under QS review.",
+    },
+    {
+        "claim_no": "PC-007",
+        "period": "2026-04",
+        "package": "Architecture",
+        "contractor": "PT Arsitek Finishing Mandiri",
+        "claim_status": "Certified",
+        "submitted_amount": 9_600_000_000,
+        "certified_amount": 9_250_000_000,
+        "payment_amount": 0,
+        "remarks": "Mock-up and early procurement certified.",
+    },
+    {
+        "claim_no": "PC-008",
+        "period": "2026-05",
+        "package": "Architecture",
+        "contractor": "PT Arsitek Finishing Mandiri",
+        "claim_status": "Submitted",
+        "submitted_amount": 9_200_000_000,
+        "certified_amount": 9_000_000_000,
+        "payment_amount": 0,
+        "remarks": "Wall and floor finishes claim submitted.",
+    },
+    {
+        "claim_no": "PC-009",
+        "period": "2026-05",
+        "package": "MEP",
+        "contractor": "PT Prima Daya MEP",
+        "claim_status": "Certified",
+        "submitted_amount": 11_300_000_000,
+        "certified_amount": 10_700_000_000,
+        "payment_amount": 0,
+        "remarks": "First fix MEP progress certified.",
+    },
+    {
+        "claim_no": "PC-010",
+        "period": "2026-06",
+        "package": "MEP",
+        "contractor": "PT Prima Daya MEP",
+        "claim_status": "Under Review",
+        "submitted_amount": 11_400_000_000,
+        "certified_amount": 11_000_000_000,
+        "payment_amount": 0,
+        "remarks": "Testing documentation under review.",
+    },
+    {
+        "claim_no": "PC-011",
+        "period": "2026-06",
+        "package": "External Works",
+        "contractor": "PT Lanskap Kota Sejahtera",
+        "claim_status": "Paid",
+        "submitted_amount": 4_500_000_000,
+        "certified_amount": 4_250_000_000,
+        "payment_amount": 4_250_000_000,
+        "remarks": "Drainage and road base works paid.",
+    },
+    {
+        "claim_no": "PC-012",
+        "period": "2026-07",
+        "package": "External Works",
+        "contractor": "PT Lanskap Kota Sejahtera",
+        "claim_status": "Certified",
+        "submitted_amount": 4_750_000_000,
+        "certified_amount": 4_500_000_000,
+        "payment_amount": 0,
+        "remarks": "Landscape sub-base certified.",
+    },
+    {
+        "claim_no": "PC-013",
+        "period": "2026-01",
+        "package": "Preliminaries",
+        "contractor": "PT Aurora Site Services",
+        "claim_status": "Paid",
+        "submitted_amount": 5_900_000_000,
+        "certified_amount": 5_600_000_000,
+        "payment_amount": 5_600_000_000,
+        "remarks": "Site establishment and temporary utilities paid.",
+    },
+    {
+        "claim_no": "PC-014",
+        "period": "2026-02",
+        "package": "Preliminaries",
+        "contractor": "PT Aurora Site Services",
+        "claim_status": "Certified",
+        "submitted_amount": 5_900_000_000,
+        "certified_amount": 5_600_000_000,
+        "payment_amount": 0,
+        "remarks": "Monthly site running cost certified.",
+    },
+]
+
+
 def get_initial_package_data() -> list[dict]:
     """Return a fresh copy of the initial package data."""
     return deepcopy(PACKAGE_DATA)
@@ -260,3 +418,8 @@ def get_initial_package_data() -> list[dict]:
 def get_initial_vo_data() -> list[dict]:
     """Return a fresh copy of the initial variation order data."""
     return deepcopy(VO_DATA)
+
+
+def get_initial_claim_data() -> list[dict]:
+    """Return a fresh copy of the initial progress claim data."""
+    return deepcopy(CLAIM_DATA)

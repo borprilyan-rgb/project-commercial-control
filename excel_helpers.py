@@ -8,9 +8,10 @@ import pandas as pd
 
 from cost_helpers import (
     calculate_package_metrics,
+    normalize_claim_data,
+    normalize_vo_data,
     prepare_package_register,
     prepare_summary_dataframe,
-    normalize_vo_data,
 )
 
 
@@ -18,13 +19,15 @@ def create_excel_report(
     project_metadata: dict,
     package_frame: pd.DataFrame,
     vo_frame: pd.DataFrame | None = None,
+    claim_frame: pd.DataFrame | None = None,
 ) -> bytes:
     """Create an in-memory Excel report with summary and package detail sheets."""
     output = BytesIO()
-    package_details = calculate_package_metrics(package_frame, vo_frame)
-    package_register = prepare_package_register(package_frame, vo_frame)
+    package_details = calculate_package_metrics(package_frame, vo_frame, claim_frame)
+    package_register = prepare_package_register(package_frame, vo_frame, claim_frame)
     variation_register = normalize_vo_data(vo_frame)
-    summary_metrics = prepare_summary_dataframe(package_frame, vo_frame)
+    claim_register = normalize_claim_data(claim_frame)
+    summary_metrics = prepare_summary_dataframe(package_frame, vo_frame, claim_frame)
 
     summary_rows = [
         {"Item": "Project Name", "Value": project_metadata["name"]},
@@ -44,6 +47,11 @@ def create_excel_report(
         package_details.to_excel(writer, sheet_name="Package Details", index=False)
         package_register.to_excel(writer, sheet_name="Package Register", index=False)
         variation_register.to_excel(writer, sheet_name="Variation Register", index=False)
+        claim_register.to_excel(
+            writer,
+            sheet_name="Progress Claim Register",
+            index=False,
+        )
 
         workbook = writer.book
         money_format = workbook.add_format({"num_format": '"Rp" #,##0'})
@@ -57,6 +65,7 @@ def create_excel_report(
             "Package Details": package_details,
             "Package Register": package_register,
             "Variation Register": variation_register,
+            "Progress Claim Register": claim_register,
         }.items():
             worksheet = writer.sheets[sheet_name]
             for column_index, column_name in enumerate(frame.columns):
@@ -86,6 +95,14 @@ def create_excel_report(
         ]
         for column_index in variation_money_columns:
             variation_sheet.set_column(column_index, column_index, 20, money_format)
+
+        claim_sheet = writer.sheets["Progress Claim Register"]
+        claim_money_columns = [
+            claim_register.columns.get_loc(column)
+            for column in ["submitted_amount", "certified_amount", "payment_amount"]
+        ]
+        for column_index in claim_money_columns:
+            claim_sheet.set_column(column_index, column_index, 20, money_format)
 
     output.seek(0)
     return output.getvalue()
