@@ -1,9 +1,15 @@
-"""In-memory dummy data for the Aurora Residence demo dashboard."""
+"""In-memory dummy data for Phase 1 of the commercial control app."""
+
+from __future__ import annotations
+
+from copy import deepcopy
 
 PROJECT_METADATA = {
     "name": "Aurora Residence",
     "type": "Mixed-use Apartment",
     "location": "Jakarta",
+    "client_type": "Property Developer",
+    "currency": "IDR",
 }
 
 
@@ -65,3 +71,8 @@ PACKAGE_DATA = [
         "certified_payment": 11_200_000_000,
     },
 ]
+
+
+def get_initial_package_data() -> list[dict]:
+    """Return a fresh copy of the initial package data."""
+    return deepcopy(PACKAGE_DATA)

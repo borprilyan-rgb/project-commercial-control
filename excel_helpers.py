@@ -1,4 +1,4 @@
-"""Excel export helpers for the Aurora Residence dashboard."""
+"""Excel export helpers for the Project Commercial Control System."""
 
 from __future__ import annotations
 
@@ -6,38 +6,27 @@ from io import BytesIO
 
 import pandas as pd
 
-from cost_helpers import calculate_package_metrics, summarize_totals
-
-
-SUMMARY_LABELS = {
-    "original_budget": "Original Budget",
-    "contract_award": "Contract Award",
-    "approved_vo": "Approved VO",
-    "pending_vo": "Pending VO",
-    "forecast_final_cost": "Forecast Final Cost",
-    "budget_variance": "Budget Variance",
-    "certified_payment": "Certified to Date",
-    "remaining_contract_value": "Remaining Contract Value",
-}
+from cost_helpers import calculate_package_metrics, prepare_summary_dataframe
 
 
 def create_excel_report(project_metadata: dict, package_frame: pd.DataFrame) -> bytes:
     """Create an in-memory Excel report with summary and package detail sheets."""
     output = BytesIO()
     package_details = calculate_package_metrics(package_frame)
-    totals = summarize_totals(package_frame)
+    summary_metrics = prepare_summary_dataframe(package_frame)
 
     summary_rows = [
         {"Item": "Project Name", "Value": project_metadata["name"]},
         {"Item": "Project Type", "Value": project_metadata["type"]},
         {"Item": "Location", "Value": project_metadata["location"]},
+        {"Item": "Client Type", "Value": project_metadata["client_type"]},
+        {"Item": "Currency", "Value": project_metadata["currency"]},
         {"Item": "", "Value": ""},
     ]
     summary_rows.extend(
-        {"Item": SUMMARY_LABELS[key], "Value": value}
-        for key, value in totals.items()
+        summary_metrics.rename(columns={"Metric": "Item"}).to_dict("records")
     )
-    summary_frame = pd.DataFrame(summary_rows)
+    summary_frame = pd.DataFrame(summary_rows, columns=["Item", "Value"])
 
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         summary_frame.to_excel(writer, sheet_name="Summary", index=False)
@@ -45,6 +34,7 @@ def create_excel_report(project_metadata: dict, package_frame: pd.DataFrame) -> 
 
         workbook = writer.book
         money_format = workbook.add_format({"num_format": '"Rp" #,##0'})
+        percent_format = workbook.add_format({"num_format": "0.0%"})
         header_format = workbook.add_format(
             {"bold": True, "bg_color": "#EAF2F8", "border": 1}
         )
@@ -66,10 +56,13 @@ def create_excel_report(project_metadata: dict, package_frame: pd.DataFrame) -> 
         money_columns = [
             package_details.columns.get_loc(column)
             for column in package_details.columns
-            if column not in {"package", "status"}
+            if column not in {"package", "status", "certified_percent"}
         ]
         for column_index in money_columns:
             details_sheet.set_column(column_index, column_index, 20, money_format)
+
+        percent_column = package_details.columns.get_loc("certified_percent")
+        details_sheet.set_column(percent_column, percent_column, 18, percent_format)
 
     output.seek(0)
     return output.getvalue()
