@@ -6,13 +6,18 @@ from io import BytesIO
 
 import pandas as pd
 
-from cost_helpers import calculate_package_metrics, prepare_summary_dataframe
+from cost_helpers import (
+    calculate_package_metrics,
+    prepare_package_register,
+    prepare_summary_dataframe,
+)
 
 
 def create_excel_report(project_metadata: dict, package_frame: pd.DataFrame) -> bytes:
     """Create an in-memory Excel report with summary and package detail sheets."""
     output = BytesIO()
     package_details = calculate_package_metrics(package_frame)
+    package_register = prepare_package_register(package_frame)
     summary_metrics = prepare_summary_dataframe(package_frame)
 
     summary_rows = [
@@ -31,6 +36,7 @@ def create_excel_report(project_metadata: dict, package_frame: pd.DataFrame) -> 
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         summary_frame.to_excel(writer, sheet_name="Summary", index=False)
         package_details.to_excel(writer, sheet_name="Package Details", index=False)
+        package_register.to_excel(writer, sheet_name="Package Register", index=False)
 
         workbook = writer.book
         money_format = workbook.add_format({"num_format": '"Rp" #,##0'})
@@ -42,6 +48,7 @@ def create_excel_report(project_metadata: dict, package_frame: pd.DataFrame) -> 
         for sheet_name, frame in {
             "Summary": summary_frame,
             "Package Details": package_details,
+            "Package Register": package_register,
         }.items():
             worksheet = writer.sheets[sheet_name]
             for column_index, column_name in enumerate(frame.columns):
@@ -56,7 +63,7 @@ def create_excel_report(project_metadata: dict, package_frame: pd.DataFrame) -> 
         money_columns = [
             package_details.columns.get_loc(column)
             for column in package_details.columns
-            if column not in {"package", "status", "certified_percent"}
+            if column not in {"package", "status", "risk_level", "certified_percent"}
         ]
         for column_index in money_columns:
             details_sheet.set_column(column_index, column_index, 20, money_format)

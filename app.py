@@ -7,10 +7,12 @@ import streamlit as st
 
 from cost_helpers import (
     calculate_dashboard_indicators,
+    calculate_package_status_indicators,
     calculate_project_totals,
     calculate_package_metrics,
     format_idr,
     format_percent,
+    prepare_package_register,
     prepare_package_summary,
     prepare_summary_dataframe,
 )
@@ -29,6 +31,17 @@ def init_state() -> None:
     if "packages" not in st.session_state:
         st.session_state.packages = pd.DataFrame(get_initial_package_data())
 
+    metadata_defaults = {
+        "contractor": "",
+        "contract_number": "",
+        "package_status": "Not Started",
+        "procurement_status": "Budget Only",
+        "remarks": "",
+    }
+    for column, default_value in metadata_defaults.items():
+        if column not in st.session_state.packages:
+            st.session_state.packages[column] = default_value
+
 
 def money_column(label: str) -> st.column_config.NumberColumn:
     """Consistent currency editor/display configuration."""
@@ -38,6 +51,25 @@ def money_column(label: str) -> st.column_config.NumberColumn:
         step=100_000_000,
         format="Rp %d",
     )
+
+
+PACKAGE_STATUS_OPTIONS = [
+    "Not Started",
+    "Tendering",
+    "Awarded",
+    "Ongoing",
+    "Completed",
+    "Closed",
+]
+
+PROCUREMENT_STATUS_OPTIONS = [
+    "Budget Only",
+    "Tender Preparation",
+    "Tender Issued",
+    "Under Evaluation",
+    "Awarded",
+    "Contract Signed",
+]
 
 
 def render_metric_grid(totals: dict[str, float]) -> None:
@@ -72,6 +104,14 @@ def render_dashboard_indicators(indicators: dict[str, float]) -> None:
         "Avg Certified %",
         format_percent(indicators["average_certified_percent"]),
     )
+
+
+def render_package_status_indicators(indicators: dict[str, int]) -> None:
+    columns = st.columns(4)
+    columns[0].metric("Awarded", indicators["awarded_count"])
+    columns[1].metric("Ongoing", indicators["ongoing_count"])
+    columns[2].metric("Completed / Closed", indicators["completed_closed_count"])
+    columns[3].metric("In Procurement", indicators["in_procurement_count"])
 
 
 def render_dashboard_charts(details: pd.DataFrame) -> None:
@@ -112,12 +152,72 @@ def render_dashboard() -> None:
     st.subheader("Commercial Summary")
     render_dashboard_indicators(calculate_dashboard_indicators(st.session_state.packages))
 
+    st.subheader("Package Status Summary")
+    render_package_status_indicators(
+        calculate_package_status_indicators(st.session_state.packages)
+    )
+
     st.subheader("Charts")
     render_dashboard_charts(details)
 
     st.subheader("Package Summary")
     st.dataframe(
         prepare_package_summary(st.session_state.packages),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.subheader("Package Register")
+    st.dataframe(
+        prepare_package_register(st.session_state.packages),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def render_package_register() -> None:
+    st.title("Package Register")
+    st.caption("Edit package metadata only. Commercial amounts remain on their own pages.")
+
+    register_columns = [
+        "package",
+        "contractor",
+        "contract_number",
+        "package_status",
+        "procurement_status",
+        "remarks",
+    ]
+    editor_frame = st.session_state.packages[register_columns].copy()
+
+    edited = st.data_editor(
+        editor_frame,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "package": st.column_config.TextColumn("Package", required=True),
+            "contractor": st.column_config.TextColumn("Contractor"),
+            "contract_number": st.column_config.TextColumn("Contract Number"),
+            "package_status": st.column_config.SelectboxColumn(
+                "Package Status",
+                options=PACKAGE_STATUS_OPTIONS,
+                required=True,
+            ),
+            "procurement_status": st.column_config.SelectboxColumn(
+                "Procurement Status",
+                options=PROCUREMENT_STATUS_OPTIONS,
+                required=True,
+            ),
+            "remarks": st.column_config.TextColumn("Remarks"),
+        },
+        key="editor_package_register",
+    )
+
+    for column in register_columns:
+        st.session_state.packages[column] = edited[column].fillna("").astype(str)
+
+    st.subheader("Updated Package Register")
+    st.dataframe(
+        prepare_package_register(st.session_state.packages),
         use_container_width=True,
         hide_index=True,
     )
@@ -205,6 +305,7 @@ def main() -> None:
         "Pages",
         [
             "Dashboard",
+            "Package Register",
             "Budget Packages",
             "Contract Awards",
             "Progress Claims",
@@ -215,6 +316,8 @@ def main() -> None:
 
     if selected_page == "Dashboard":
         render_dashboard()
+    elif selected_page == "Package Register":
+        render_package_register()
     elif selected_page == "Budget Packages":
         render_edit_page("Budget Packages", ["original_budget"], allow_package_edit=True)
     elif selected_page == "Contract Awards":

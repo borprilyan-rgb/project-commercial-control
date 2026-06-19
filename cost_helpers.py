@@ -13,6 +13,15 @@ MONEY_COLUMNS = [
     "certified_payment",
 ]
 
+TEXT_COLUMNS = [
+    "package",
+    "contractor",
+    "contract_number",
+    "package_status",
+    "procurement_status",
+    "remarks",
+]
+
 
 DETAIL_COLUMNS = [
     "package",
@@ -27,6 +36,16 @@ DETAIL_COLUMNS = [
     "certified_percent",
     "status",
     "risk_level",
+]
+
+REGISTER_COLUMNS = [
+    "package",
+    "contractor",
+    "contract_number",
+    "package_status",
+    "procurement_status",
+    "risk_level",
+    "remarks",
 ]
 
 DASHBOARD_DISPLAY_COLUMNS = [
@@ -67,6 +86,11 @@ DISPLAY_LABELS = {
     "remaining_contract_value": "Remaining Contract Value",
     "status": "Status",
     "risk_level": "Risk Level",
+    "contractor": "Contractor",
+    "contract_number": "Contract Number",
+    "package_status": "Package Status",
+    "procurement_status": "Procurement Status",
+    "remarks": "Remarks",
 }
 
 
@@ -80,14 +104,15 @@ def calculate_package_metrics(frame: pd.DataFrame) -> pd.DataFrame:
     """Return package data with QS cost-control metrics applied."""
     result = frame.copy()
 
-    if "package" not in result:
-        result["package"] = ""
+    for column in TEXT_COLUMNS:
+        if column not in result:
+            result[column] = ""
+        result[column] = result[column].fillna("").astype(str)
 
     for column in MONEY_COLUMNS:
         if column not in result:
             result[column] = 0
         result[column] = pd.to_numeric(result[column], errors="coerce").fillna(0)
-    result["package"] = result["package"].fillna("").astype(str)
 
     result["forecast_final_cost"] = (
         result["contract_award"] + result["approved_vo"] + result["pending_vo"]
@@ -170,6 +195,33 @@ def calculate_dashboard_indicators(frame: pd.DataFrame) -> dict[str, float]:
     }
 
 
+def calculate_package_status_indicators(frame: pd.DataFrame) -> dict[str, int]:
+    """Calculate package register status indicators."""
+    working = frame.copy()
+    if "package_status" not in working:
+        working["package_status"] = ""
+    if "procurement_status" not in working:
+        working["procurement_status"] = ""
+
+    package_status = working["package_status"].fillna("").astype(str)
+    procurement_status = working["procurement_status"].fillna("").astype(str)
+    tender_statuses = {
+        "Budget Only",
+        "Tender Preparation",
+        "Tender Issued",
+        "Under Evaluation",
+    }
+
+    return {
+        "awarded_count": int((package_status == "Awarded").sum()),
+        "ongoing_count": int((package_status == "Ongoing").sum()),
+        "completed_closed_count": int(
+            package_status.isin(["Completed", "Closed"]).sum()
+        ),
+        "in_procurement_count": int(procurement_status.isin(tender_statuses).sum()),
+    }
+
+
 def format_idr(value: float) -> str:
     """Format a number as compact Indonesian Rupiah."""
     sign = "-" if value < 0 else ""
@@ -222,6 +274,20 @@ def prepare_package_summary(frame: pd.DataFrame) -> pd.DataFrame:
     display["certified_percent"] = display["certified_percent"].apply(format_percent)
 
     return display.rename(columns=DISPLAY_LABELS)
+
+
+def prepare_package_register(frame: pd.DataFrame) -> pd.DataFrame:
+    """Prepare package register metadata with calculated risk level."""
+    details = calculate_package_metrics(frame)
+    register = frame.copy()
+
+    for column in TEXT_COLUMNS:
+        if column not in register:
+            register[column] = ""
+        register[column] = register[column].fillna("").astype(str)
+    register["risk_level"] = details["risk_level"].values
+
+    return register[REGISTER_COLUMNS].rename(columns=DISPLAY_LABELS)
 
 
 def display_table(frame: pd.DataFrame) -> pd.DataFrame:
